@@ -383,7 +383,7 @@ class LaraTeX
      */
     public function convertHtmlToLatex(string $Input, array $Override = NULL): string
     {
-        $Input = $this->htmlEntitiesFix($Input, ENT_QUOTES | ENT_HTML401);
+        $Input = $this->htmlEntitiesFix($Input, ENT_QUOTES | ENT_HTML401 | ENT_HTML5);
 
         $ReplaceDictionary = array(
             array('tag' => 'p', 'extract' => 'value', 'replace' => '$1 \newline '),
