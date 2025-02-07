@@ -10,7 +10,7 @@
     <img alt="Laratex" src="laratex.png" width="600">
   </a>
 
-  <h3 align="center">LaraTeX</h3>
+<h3 align="center">LaraTeX</h3>
 
   <p align="center">
     A laravel package to generate PDFs using LaTeX
@@ -30,9 +30,6 @@
   <summary>Table of Contents</summary>
   <ol>
     <li>
-      <a href="#note">Note</a>
-    </li>
-    <li>
       <a href="#getting-started">Getting Started</a>
       <ul>
         <li><a href="#prerequisites">Prerequisites</a></li>
@@ -45,6 +42,7 @@
         <ul>
             <li><a href="#dry-run">Dry Run</a></li>
             <li><a href="#preparing-a-laravel-view-with-latex-content">Preparing a Laravel View with LaTeX Content</a></li>
+            <li><a href="#using-the-blade-directive">Using the blade directive</a></li>
             <li><a href="#using-graphics-inside-of-your-latex-files">Using graphics inside of your LaTeX files</a></li>
             <li><a href="#download-a-pdf-file">Download a PDF File</a></li>
             <li><a href="#save-a-pdf-file">Save a PDF file</a></li>
@@ -52,6 +50,8 @@
             <li><a href="#return-the-pdf-inline">Return the PDF inline</a></li>
             <li><a href="#return-the-tex-data">Return the TeX data</a></li>
             <li><a href="#using-raw-tex">Using Raw TeX</a></li>
+            <li><a href="#compile-multiple-times">Compile multiple times</a></li>
+            <li><a href="#compile-using-bibtex">Compile using bibtex</a></li>
             <li><a href="#bulk-download-in-a-zip-archive">Bulk download in a ZIP archive</a></li>
         </ul>
     </li>
@@ -64,11 +64,6 @@
     <li><a href="#license">License</a></li>
   </ol>
 </details>
-
-## NOTE
-
-This package was tested in two different environments while using the package for those two special processes.
-If you experience any issues in all the time you are using it please open an issue so I can make this package better with every update :)  
 
 ## Getting Started
 
@@ -83,14 +78,14 @@ Windows is really good with paths using both forward & backslashes but just keep
 ### Prerequisites
 
 You need to have `texlive-full` installed on your server. This program has tex packages and language libraries which help you generate documents.
-Note : You can also choose to install `textlive` which is the lighter version of the package.
+Note: You can also choose to install `textlive` which is the lighter version of the package.
 
 The difference is:
 
 -   When you install `textlive` and want to use any additional tex package, you need to install it manually.
 -   `texlive-full` comes with these extra packages. As a result it may take up some additional space on your server (to store the package library files).
 
-If you are choosing a hosting provider that doesn't allow you to install applications yourself please make sure that pdflatex is installed or ask if it can get installed. Also make sure that you have SSH access to the server as you might need it to find out in which path your pdflatex installation is sitting.
+If you are choosing a hosting provider that doesn't allow you to install applications yourself please make sure that pdflatex, xelatex or lualatex is installed or ask if it can get installed. Also make sure that you have SSH access to the server as you might need it to find out in which path your pdflatex installation is sitting.
 
 ### Installation
 
@@ -117,10 +112,23 @@ On Unix systems you can find out which bin path to use by running the command `w
 
 If you are running this package with on a windows system please check this in cmd.exe before.
 There you should find out if running the command `pdflatex` works in cmd or if you need to provide the absolute path to your pdflatex application.
+If you cannot just run pdflatex you might have to add the path to your pdflatex compiler in your PATH system environment variables.
+
+**bibTexPath**
+If your system doesn't allow to just run the command line command "bibtex" you may specify the correct one.
+On Unix systems you can find out which bin path to use by running the command `which bibtex`
+
+If you are running this package with on a windows system please check this in cmd.exe before.
+There you should find out if running the command `bibtex` works in cmd or if you need to provide the absolute path to your bibtex application.
+If you cannot just run bibtex you might have to add the path to your bibtex compiler in your PATH system environment variables.
 
 **tempPath**
 This specifies the folder where temporary files are saved while rendering a tex file into a PDF file.
 It is important that you always **start your path without a slash** and **end your path with a slash** (e.g. app/pdf/)
+
+**teardown**
+As seen in the section Garbage Collection this package deletes all temp files (log, aux etc.) created while generating the PDF file. When debugging successfully generated PDF files it can be useful to check the generated tex file.
+Set this setting to `false` if you don't want LaraTeX to delete those files after generating the PDF.
 
 ## Usage
 
@@ -224,11 +232,76 @@ You can see how we have easily used blade directives for `{{ $name }}` to show a
 
 For more complex LaTeX files where you may need to use blade directives like `{{ $var }}` inside of a LaTeX command which already uses curly brackets (e.g. `\textbf{}`) you can always use Laravels `@php @endphp` method or plain PHP like `<?php echo $var; ?>` or `<?= $var ?>` (Example: `\textbf{<?= $var ?>}`).
 
+As an addition there is also a `@latex()` Blade directive mentioned in the next chapter.
+
 **Important note when using html characters**
 
 When using the `{{ }}` statement in a blade template, Laravel's blade engine always sends data through the PHP function `htmlspecialchars()` first. This will convert characters like `&` to `&amp;` and `<` to `&lt;` to just mention a few. pdflatex doesn't like those converted string and will throw an error like `Misplaced alignment tab character &.`.
 
 To fix this issue you have to use the `{!! !!}` statement so that unescaped text is written to your tex template.
+
+### Using the Blade directive
+
+Since LaTeX has its own syntax it is not advised to use the standard blade syntax `{{ $variable }}` or `{!! $variable !!}`. Instead you can use `@latex($variable)` in your blade templates instead, which handles the suitable escaping of reserved LaTeX characters.
+
+Create a view file inside `resources/views/latex/tex.blade.php`
+You are of course free to create your view files wherever you want inside of your resources folder.
+Just make sure to define the view to use correctly later.
+
+```php
+\documentclass[a4paper,9pt,landscape]{article}
+\usepackage{adjustbox}
+\usepackage[english]{babel}
+\usepackage[scaled=.92]{helvet}
+\usepackage{fancyhdr}
+\usepackage[svgnames,table]{xcolor}
+\usepackage[a4paper,inner=1.5cm,outer=1.5cm,top=1cm,bottom=1cm,bindingoffset=0cm]{geometry}
+\usepackage{blindtext}
+\geometry{textwidth=\paperwidth, textheight=\paperheight, noheadfoot, nomarginpar}
+
+\renewcommand{\familydefault}{\sfdefault}
+
+\pagestyle{fancy}
+\fancyhead{}
+\renewcommand{\headrulewidth}{0pt}
+\fancyfoot{}
+\fancyfoot[LE,RO]{\thepage}
+
+\fancyfoot[C]{\fontsize{8pt}{8pt}\selectfont The above document is auto-generated.}
+\renewcommand{\footrulewidth}{0.2pt}
+
+\begin{document}
+
+    \section*{\centering{LaraTeX Demo Document}}
+    
+    \begin{center}
+        \item[Name :] @latex($Name)
+        \item[Date of Birth :] @latex($Dob)
+    \end{center}
+    
+    \blindtext
+    
+    \begin{table}[ht]
+        \centering
+        \renewcommand{\arraystretch}{2}
+        \begin{tabular}{|c|l|} 
+             \hline
+             \rowcolor[HTML]{E3E3E3}
+             \textbf{ID} & \textbf{Language} \\
+             \hline\renewcommand{\arraystretch}{1.5}
+             
+             @foreach($languages as $key => $language)
+                @latex($key) & @latex($language) \\ \hline
+             @endforeach
+             
+        \end{tabular}
+        \caption{Language Summary}
+    \end{table}
+
+\end{document}
+```
+
+You can see how we have easily used the `@latex()` Blade directive to print variables.
 
 ### Using graphics inside of your LaTeX files
 
@@ -403,6 +476,42 @@ return (new LaraTeX($tex))->with([
 ])->download('test.pdf');
 ```
 
+### Compile multiple times
+
+There are a few cases in which it is necessary to compile twice. If you are using a table of contents (TOC) for example, or if you use the package `lastpage` to get a better pagination (`Page n of n`) as another example.
+
+LaraTeX compiles once as a default. If you need to compile twice (or - for whatever reason more than twice) you can use the method `compileAmount()` to achieve this.
+
+```php
+return (new LaraTeX('latex.tex'))->with([
+    'Name' => 'John Doe',
+    'Dob' => '01/01/1990',
+    'SpecialCharacters' => '$ (a < b) $',
+    'languages' => [
+        'English',
+        'Spanish',
+        'Italian'
+    ]
+])->compileAmount(2)->download('test.pdf');
+```
+
+### Compile using bibtex
+
+If you want to use `bibtex`, please make sure that you have the `bibTexPath` property set correctly inside your `laratex.php` config file.
+
+```php
+return (new LaraTeX('latex.tex'))->with([
+    'Name' => 'John Doe',
+    'Dob' => '01/01/1990',
+    'SpecialCharacters' => '$ (a < b) $',
+    'languages' => [
+        'English',
+        'Spanish',
+        'Italian'
+    ]
+])->renderBibtex()->compileAmount(3)->download('test.pdf');
+```
+
 ### Bulk download in a ZIP archive
 
 You want to export multiple PDFs inside of a ZIP-Archive? This package has that functionality ready for you. This gives a great flexibility for you. However, make sure you are not passing too many PDFs together, as it is going to consume a good amount of server memory to export those together.
@@ -529,9 +638,9 @@ class LaratexPdfWasGeneratedConfirmation
      */
     public function handle(LaratexPdfWasGenerated$event)
     {
-        // Path  of pdf in case in was saved
+        // Path of PDF in case it was saved
         // OR
-        // Downloaded name of pdf file in case it was downloaded in response directly
+        // Downloaded name of PDF file in case it was downloaded in response directly
         $pdf = $event->pdf;
 
         // download OR savepdf
@@ -575,14 +684,3 @@ Please see [CHANGELOG](CHANGELOG.md) for more information about any major change
 ## License
 
 The MIT License (MIT). Please see [License File](LICENSE.md) for more information.
-
-[contributors-shield]: https://img.shields.io/github/contributors/webstasolutions/laratex.svg?style=for-the-badge
-[contributors-url]: https://github.com/webstasolutions/laratex/graphs/contributors
-[forks-shield]: https://img.shields.io/github/forks/webstasolutions/laratex.svg?style=for-the-badge
-[forks-url]: https://github.com/webstasolutions/laratex/network/members
-[stars-shield]: https://img.shields.io/github/stars/webstasolutions/laratex.svg?style=for-the-badge
-[stars-url]: https://github.com/webstasolutions/laratex/stargazers
-[issues-shield]: https://img.shields.io/github/issues/webstasolutions/laratex.svg?style=for-the-badge
-[issues-url]: https://github.com/webstasolutions/laratex/issues
-[license-shield]: https://img.shields.io/github/license/webstasolutions/laratex.svg?style=for-the-badge
-[license-url]: https://github.com/webstasolutions/laratex/blob/master/LICENSE.md

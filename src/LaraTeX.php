@@ -3,8 +3,8 @@
 namespace Websta\LaraTeX;
 
 use Websta\LaraTeX\LaratexException;
-use Websta\LaraTeX\LaratexPdfWasGenerated;
 use Websta\LaraTeX\LaratexPdfFailed;
+use Websta\LaraTeX\LaratexPdfWasGenerated;
 use Websta\LaraTeX\ViewNotFoundException;
 use Symfony\Component\Process\Process;
 use Illuminate\Support\Str;
@@ -25,7 +25,7 @@ class LaraTeX
      *
      * @var array
      */
-    private array $data;
+    private array $data = [];
 
     /**
      * Rendered tex file
@@ -61,7 +61,29 @@ class LaraTeX
     /**
      * @var string
      */
+    protected string $bibTexPath;
+
+    /**
+     * @var string
+     */
     protected string $tempPath;
+
+    /**
+     * Number of times to compile the TeX file. (for TOC generation for example)
+     *
+     * @var integer
+     */
+    private $compileAmount = 1;
+
+    /**
+     * Should we run BibTeX before generating?
+     */
+    public bool $generateBibtex = false;
+
+    /**
+     * @var bool
+     */
+    protected bool $doTeardown = true;
 
     /**
      * Construct the instance
@@ -73,6 +95,8 @@ class LaraTeX
     {
         $this->binPath = config('laratex.binPath');
         $this->tempPath = config('laratex.tempPath');
+        $this->bibTexPath = config('laratex.bibTexPath');
+        $this->doTeardown = config('laratex.teardown');
         if ($stubPath instanceof RawTex) {
             $this->isRaw = true;
             $this->renderedTex = $stubPath->getTex();
@@ -80,6 +104,25 @@ class LaraTeX
             $this->stubPath = $stubPath;
         }
         $this->metadata = $metadata;
+    }
+
+    /**
+     * Set the number of times to compile
+     *
+     * @param  integer $compileAmount
+     *
+     * @return LaraTeX
+     */
+    public function compileAmount(int $compileAmount): self
+    {
+        $this->compileAmount = $compileAmount;
+        return $this;
+    }
+
+    public function renderBibtex(): self
+    {
+        $this->generateBibtex = true;
+        return $this;
     }
 
     /**
@@ -127,14 +170,6 @@ class LaraTeX
     public function dryRun():  \Symfony\Component\HttpFoundation\BinaryFileResponse
     {
         $this->isRaw = true;
-        $process = new Process(["which", "pdflatex"]);
-        $process->run();
-
-        // if (!$process->isSuccessful()) {
-        //
-        //     throw new LaratexException($process->getOutput());
-        // }
-
         $this->renderedTex = File::get(dirname(__FILE__) . '/dryrun.tex');
         return $this->download('dryrun.pdf');
     }
@@ -284,14 +319,25 @@ class LaraTeX
         $program    = $this->binPath ? $this->binPath : 'pdflatex';
         $cmd        = [$program, '-shell-escape', '-output-directory', $tmpDir, $tmpfname];
 
-        $process    = new Process($cmd);
-        $process->run();
-        if (!$process->isSuccessful()) {
-            LaratexPdfFailed::dispatch($fileName, 'download', $this->metadata);
-            $this->parseError($tmpfname, $process);
+        for ($i = 1; $i <= $this->compileAmount; $i++) {
+
+            // BibTeX must be run after the first generation of the LaTeX file.
+            if ($i === 2 && $this->generateBibtex) {
+                $bibtex = new Process([$this->bibTexPath, basename($tmpfname)], $tmpDir);
+                $bibtex->run();
+            }
+
+            $process = new Process($cmd);
+            $process->run();
+            if (!$process->isSuccessful()) {
+                LaratexPdfFailed::dispatch($fileName, 'download', $this->metadata);
+                $this->parseError($tmpfname, $process);
+            }
         }
 
-        $this->teardown($tmpfname);
+        if ($this->doTeardown) {
+            $this->teardown($tmpfname);
+        }
 
         register_shutdown_function(function () use ($tmpfname) {
             if (File::exists($tmpfname . '.pdf')) {
@@ -307,23 +353,22 @@ class LaraTeX
      *
      * @param string $tmpfname
      *
-     * @return void
+     * @return \Websta\LaraTeX\LaraTeX
      */
-    private function teardown(string $tmpfname): void
+    private function teardown(string $tmpfname): self
     {
         if (File::exists($tmpfname)) {
             File::delete($tmpfname);
         }
-        if (File::exists($tmpfname . '.aux')) {
-            File::delete($tmpfname . '.aux');
-        }
-        if (File::exists($tmpfname . '.log')) {
-            File::delete($tmpfname . '.log');
-        }
-        if (File::exists($tmpfname . '.out')) {
-            File::delete($tmpfname . '.out');
+
+        $extensions = ['aux', 'log', 'out', 'bbl', 'blg', 'toc', 'tex'];
+        foreach ($extensions as $extension) {
+            if (File::exists($tmpfname . '.' . $extension)) {
+                File::delete($tmpfname . '.' . $extension);
+            }
         }
 
+        return $this;
     }
 
     /**
@@ -335,15 +380,25 @@ class LaraTeX
      */
     private function parseError(string $tmpfname, $process): void
     {
-
-        $logFile = $tmpfname . 'log';
+        $logFile = $tmpfname . '.log';
+        $texFileNoExtension = $tmpfname;
+        $texFileExtension = $tmpfname . '.tex';
 
         if (!File::exists($logFile)) {
-            throw new LaratexException($process->getOutput());
+            throw new LaratexException($process->getErrorOutput() . ' - ' . $process->getOutput());
+        }
+
+        if (File::exists($texFileNoExtension)) {
+            $texFileContent = File::get($texFileNoExtension);
+        } elseif (File::exists($texFileExtension)) {
+            $texFileContent = File::get($texFileExtension);
+        } else {
+            $texFileContent = 'Tex file not found';
         }
 
         $error = File::get($logFile);
-        throw new LaratexException($error);
+
+        throw LaratexException::detailed($error, $texFileContent);
     }
 
     /**

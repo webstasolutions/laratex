@@ -142,11 +142,9 @@ class LaratexCollection
      */
     private function moveToCollectionDir(): LaratexCollection
     {
-
         $this->makeCollectionDir();
 
         foreach ($this->collection as $latex) {
-
             $name = $latex->getName() ? $latex->getName() : Str::random(4) . '.pdf';
             $pdf = $this->collectionDir . DIRECTORY_SEPARATOR . $name;
             $latex->savePdf($pdf);
