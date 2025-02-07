@@ -2,6 +2,7 @@
 
 namespace Websta\LaraTeX;
 
+use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\ServiceProvider;
 
 class LaraTeXServiceProvider extends ServiceProvider
@@ -16,6 +17,11 @@ class LaraTeXServiceProvider extends ServiceProvider
                 __DIR__.'/../config/config.php' => config_path('laratex.php'),
             ], 'config');
         }
+
+        Blade::directive('latex', function ($exp) {
+            $path = LatexEscaper::class;
+            return "<?php echo $path::escape($exp) ?>";
+        });
     }
 
     /**

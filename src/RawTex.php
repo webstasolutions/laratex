@@ -18,7 +18,6 @@ class RawTex
      */
     public function __construct(string $tex)
     {
-
         $this->tex = $tex;
     }
 
